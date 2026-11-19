@@ -1,26 +1,97 @@
 // Interactuar con mi obra — Cecilia Vite — UNA 2026
-// Canvas + JavaScript, sin bibliotecas externas. La pintura original nunca se modifica.
-const canvas=document.getElementById('obraCanvas'),ctx=canvas.getContext('2d');
-const img=new Image();img.src='huellas.jpg';
-const modes=document.querySelectorAll('[data-mode]');
-const hint=document.getElementById('hint'),description=document.getElementById('modeDescription');
-const overlay=document.createElement('canvas'),oc=overlay.getContext('2d');
-let mode='huella',pressed=false,previous=null,stamps=[],pieces=[],waves=[],pointer=null,raf=null,stampCount=0;
-const texts={huella:['Mové el mouse o arrastrá el dedo para imprimir huellas digitales.','Cada gesto deja una marca irrepetible sobre la imagen.'],revelar:['Mové el cursor o el dedo para abrir caminos en la oscuridad.','La imagen se descubre solamente donde alguien interviene.'],mirada:['Mové el cursor alrededor del ojo: la pupila intenta seguirte.','El espectador deja de ser el único que observa.'],fragmentar:['Hacé clic o tocá la obra para desplazar sus fragmentos.','Cada intervención altera la composición original.'],ondas:['Hacé clic o tocá la pintura para crear ondas.','La imagen reacciona a la presencia mediante vibraciones.']};
+// La imagen original permanece intacta; las intervenciones se dibujan en capas.
+const canvas = document.getElementById('obraCanvas');
+const ctx = canvas.getContext('2d');
+const img = new Image();
+const modes = document.querySelectorAll('[data-mode]');
+const hint = document.getElementById('hint');
+const description = document.getElementById('modeDescription');
+const overlay = document.createElement('canvas');
+const oc = overlay.getContext('2d');
+let mode = 'huella', pressed = false, previous = null;
+let stamps = [], pieces = [], waves = [], pointer = null, raf = null;
+const colors = [[20,130,240],[40,220,235],[75,185,105],[250,205,45],[245,115,45],[140,80,195]];
+const texts = {
+ huella:['Mové el mouse o arrastrá el dedo para dejar marcas de color.','Cada gesto deja una marca irrepetible sobre la imagen.'],
+ revelar:['Mové el cursor o el dedo para abrir caminos en la oscuridad.','La imagen se descubre solamente donde alguien interviene.'],
+ mirada:['Mové el cursor alrededor del ojo: la pupila intenta seguirte.','El espectador deja de ser el único que observa.'],
+ fragmentar:['Hacé clic o tocá la obra para desplazar sus fragmentos.','Cada intervención altera la composición original.'],
+ ondas:['Hacé clic o tocá la pintura para crear ondas.','La imagen reacciona a la presencia mediante vibraciones.'],
+ libre:['Recorré la pintura para dejar huellas y revelar; hacé clic para fragmentar y crear ondas.','Todas las intervenciones conviven sobre una misma imagen.']
+};
+function has(k){return mode===k||mode==='libre'}
 function base(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(img,0,0,canvas.width,canvas.height)}
-function reset(){if(!img.naturalWidth)return;canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;overlay.width=canvas.width;overlay.height=canvas.height;stamps=[];pieces=[];waves=[];pointer=null;previous=null;stampCount=0;if(mode==='revelar'){oc.fillStyle='rgba(1,7,13,.96)';oc.fillRect(0,0,overlay.width,overlay.height)}render()}
-function choose(m){mode=m;modes.forEach(b=>{let on=b.dataset.mode===m;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on))});hint.textContent=texts[m][0];description.textContent=texts[m][1];reset()}
-function point(e){let r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
-function fingerprint(x,y,angle=0){stamps.push({x,y,angle,size:38+Math.random()*16});render()}
-function paintFinger(s){ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);ctx.strokeStyle='rgba(229,247,227,.75)';ctx.lineWidth=2;ctx.lineCap='round';for(let j=0;j<12;j++){let rx=7+j*2.5,ry=10+j*3.6;ctx.beginPath();for(let i=0;i<=48;i++){let a=(-Math.PI*.96)+(Math.PI*1.92)*i/48;let x=Math.cos(a)*rx,y=Math.sin(a)*ry;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)}ctx.stroke()}ctx.restore()}
-function eraseAt(p){oc.save();oc.globalCompositeOperation='destination-out';let g=oc.createRadialGradient(p.x,p.y,6,p.x,p.y,100);g.addColorStop(0,'rgba(0,0,0,1)');g.addColorStop(.65,'rgba(0,0,0,.92)');g.addColorStop(1,'rgba(0,0,0,0)');oc.fillStyle=g;oc.beginPath();oc.arc(p.x,p.y,100,0,Math.PI*2);oc.fill();oc.restore();render()}
-function addPiece(p){let w=canvas.width*.19,h=canvas.height*.13,x=Math.max(0,Math.min(canvas.width-w,p.x-w/2)),y=Math.max(0,Math.min(canvas.height-h,p.y-h/2));pieces.push({x,y,w,h,dx:(Math.random()-.5)*135,dy:(Math.random()-.5)*110});render()}
-function drawPupil(){if(!pointer)return;let eye={x:canvas.width*.556,y:canvas.height*.225};let dx=Math.max(-18,Math.min(18,(pointer.x-eye.x)*.055)),dy=Math.max(-13,Math.min(13,(pointer.y-eye.y)*.045));ctx.save();ctx.beginPath();ctx.ellipse(eye.x,eye.y,canvas.width*.052,canvas.height*.037,0,0,Math.PI*2);ctx.clip();let g=ctx.createRadialGradient(eye.x+dx,eye.y+dy,1,eye.x+dx,eye.y+dy,32);g.addColorStop(0,'#040d18');g.addColorStop(.57,'#0b1b2b');g.addColorStop(1,'rgba(4,12,23,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(eye.x+dx,eye.y+dy,32,0,Math.PI*2);ctx.fill();ctx.fillStyle='rgba(255,255,255,.85)';ctx.beginPath();ctx.arc(eye.x+dx-9,eye.y+dy-12,5,0,Math.PI*2);ctx.fill();ctx.restore()}
-function render(){if(!img.naturalWidth)return;base();if(mode==='huella')stamps.forEach(paintFinger);if(mode==='revelar')ctx.drawImage(overlay,0,0);if(mode==='mirada')drawPupil();if(mode==='fragmentar'){pieces.forEach(p=>{ctx.fillStyle='rgba(3,13,20,.68)';ctx.fillRect(p.x,p.y,p.w,p.h);ctx.drawImage(img,p.x,p.y,p.w,p.h,p.x+p.dx,p.y+p.dy,p.w,p.h);ctx.strokeStyle='rgba(190,235,232,.75)';ctx.lineWidth=2;ctx.strokeRect(p.x+p.dx,p.y+p.dy,p.w,p.h)})}if(mode==='ondas'){let now=performance.now();waves=waves.filter(w=>now-w.t<1700);for(let w of waves){let age=(now-w.t)/1700,r=age*canvas.width*.36;ctx.save();ctx.beginPath();ctx.arc(w.x,w.y,r,0,Math.PI*2);ctx.clip();ctx.globalAlpha=(1-age)*.38;ctx.drawImage(img,0,0,canvas.width,canvas.height,-10*(1-age),-10*(1-age),canvas.width+20*(1-age),canvas.height+20*(1-age));ctx.restore();ctx.strokeStyle=`rgba(158,237,239,${(1-age)*.85})`;ctx.lineWidth=5*(1-age)+1;ctx.beginPath();ctx.arc(w.x,w.y,r,0,Math.PI*2);ctx.stroke()}}}
-function animate(){render();if(mode==='ondas'&&waves.length)raf=requestAnimationFrame(animate);else raf=null}
-function act(p,force=false){if(mode==='huella'){if(!previous||Math.hypot(p.x-previous.x,p.y-previous.y)>46||force){fingerprint(p.x,p.y,Math.random()*.45-.2);previous=p}}else if(mode==='revelar')eraseAt(p);else if(mode==='mirada'){pointer=p;render()}else if(mode==='fragmentar'&&force)addPiece(p);else if(mode==='ondas'&&force){waves.push({x:p.x,y:p.y,t:performance.now()});if(!raf)animate()}}
+function reset(){
+ if(!img.naturalWidth)return;
+ canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
+ overlay.width=canvas.width;overlay.height=canvas.height;
+ stamps=[];pieces=[];waves=[];pointer=null;previous=null;
+ if(has('revelar')){oc.fillStyle='rgba(8,18,28,.94)';oc.fillRect(0,0,overlay.width,overlay.height)}
+ render();
+}
+function choose(m){
+ mode=m;
+ modes.forEach(b=>{let active=b.dataset.mode===m;b.classList.toggle('active',active);b.setAttribute('aria-pressed',String(active))});
+ hint.textContent=texts[m][0];description.textContent=texts[m][1];reset();
+}
+function point(e){const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*canvas.width/r.width,y:(e.clientY-r.top)*canvas.height/r.height}}
+function addStamp(p){
+ const c=colors[Math.floor(Math.random()*colors.length)];
+ stamps.push({x:p.x,y:p.y,w:canvas.width*(.012+Math.random()*.014),h:canvas.width*(.007+Math.random()*.008),c});
+ if(stamps.length>2500)stamps.shift();
+}
+function paintStamp(s){ctx.fillStyle=`rgba(${s.c.join(',')},.40)`;ctx.beginPath();ctx.ellipse(s.x,s.y,s.w,s.h,0,0,Math.PI*2);ctx.fill()}
+function eraseAt(p){
+ oc.save();oc.globalCompositeOperation='destination-out';oc.beginPath();
+ oc.arc(p.x,p.y,canvas.width*.0625,0,Math.PI*2);oc.fill();oc.restore();
+}
+function addPiece(p){
+ const w=canvas.width*.1625,h=canvas.width*.1625;
+ const x=Math.max(0,Math.min(canvas.width-w,p.x-w/2)),y=Math.max(0,Math.min(canvas.height-h,p.y-h/2));
+ pieces.push({x,y,w,h,dx:(Math.random()-.5)*canvas.width*.175,dy:(Math.random()-.5)*canvas.width*.175});
+}
+function drawPupil(){
+ if(!pointer)return;
+ const eye={x:canvas.width*.56,y:canvas.height*.24};
+ const dx=Math.max(-canvas.width*.0375,Math.min(canvas.width*.0375,(pointer.x-eye.x)*.06));
+ const dy=Math.max(-canvas.width*.03,Math.min(canvas.width*.03,(pointer.y-eye.y)*.06));
+ ctx.save();ctx.fillStyle='rgba(12,20,35,.96)';ctx.beginPath();
+ ctx.ellipse(eye.x+dx,eye.y+dy,canvas.width*.0225,canvas.width*.0275,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='rgba(255,255,255,.82)';ctx.beginPath();ctx.ellipse(eye.x+dx+canvas.width*.0075,eye.y+dy-canvas.width*.0125,canvas.width*.006,canvas.width*.0075,0,0,Math.PI*2);ctx.fill();ctx.restore();
+}
+function drawPieces(){for(const p of pieces){ctx.drawImage(img,p.x,p.y,p.w,p.h,p.x+p.dx,p.y+p.dy,p.w,p.h)}}
+function drawWaves(){
+ const now=performance.now();waves=waves.filter(w=>now-w.t<1500);
+ for(const w of waves){const age=(now-w.t)/1500;
+ ctx.strokeStyle=`rgba(80,220,240,${(1-age)*.86})`;ctx.lineWidth=Math.max(1,canvas.width*.005);
+ ctx.beginPath();ctx.arc(w.x,w.y,canvas.width*(.0125+age*.30),0,Math.PI*2);ctx.stroke();}
+}
+function render(){
+ if(!img.naturalWidth)return;
+ base();
+ if(has('revelar'))ctx.drawImage(overlay,0,0);
+ if(has('huella'))stamps.forEach(paintStamp);
+ if(has('mirada'))drawPupil();
+ if(has('fragmentar'))drawPieces();
+ if(has('ondas'))drawWaves();
+}
+function animate(){raf=null;render();if(waves.length&&has('ondas'))raf=requestAnimationFrame(animate)}
+function act(p,click=false){
+ pointer=p;
+ if(has('huella')&&(!previous||Math.hypot(p.x-previous.x,p.y-previous.y)>canvas.width*.006||click))addStamp(p);
+ if(has('revelar'))eraseAt(p);
+ if(click&&has('fragmentar'))addPiece(p);
+ if(click&&has('ondas'))waves.push({x:p.x,y:p.y,t:performance.now()});
+ previous=p;
+ render();if(waves.length&&has('ondas')&&!raf)raf=requestAnimationFrame(animate);
+}
 canvas.addEventListener('pointerdown',e=>{pressed=true;canvas.setPointerCapture(e.pointerId);act(point(e),true)});
-canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||pressed){let p=point(e);if(mode==='huella'||mode==='revelar'||mode==='mirada')act(p)}});
-canvas.addEventListener('pointerup',()=>{pressed=false;previous=null});canvas.addEventListener('pointercancel',()=>{pressed=false;previous=null});canvas.addEventListener('pointerleave',()=>{if(mode==='mirada'){pointer=null;render()}previous=null});
-document.getElementById('reset').addEventListener('click',reset);modes.forEach(b=>b.addEventListener('click',()=>choose(b.dataset.mode)));
-img.addEventListener('load',()=>choose('huella'));if(img.complete&&img.naturalWidth)choose('huella');
+canvas.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||pressed)act(point(e))});
+canvas.addEventListener('pointerup',()=>{pressed=false;previous=null});
+canvas.addEventListener('pointercancel',()=>{pressed=false;previous=null});
+canvas.addEventListener('pointerleave',()=>{previous=null;if(has('mirada')){pointer=null;render()}});
+document.getElementById('reset').addEventListener('click',reset);
+modes.forEach(b=>b.addEventListener('click',()=>choose(b.dataset.mode)));
+img.addEventListener('load',()=>choose('huella'));
+img.src='huellas.jpg';
+if(img.complete&&img.naturalWidth)choose('huella');
